@@ -154,6 +154,10 @@ activemq-data/
 *.sqlite
 *.sqlite3
 
+# Local installed packages
+backend/libs/
+libs/
+
 # Environments
 .env
 .envrc
