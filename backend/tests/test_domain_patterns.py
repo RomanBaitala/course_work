@@ -136,9 +136,25 @@ class TestBookingBuilder(unittest.TestCase):
         self.assertEqual(booking.guest.full_name, "Тарас Шевченко")
         self.assertEqual(booking.room.room_number, "202")
         self.assertEqual(booking.nights_count, 2)
-        # 1200 * 2 = 2400 - 100 бонусів = 2300 грн
-        self.assertEqual(booking.total_price, 2300.0)
+        self.assertEqual(booking.used_bonus_points, 100.0)
         self.assertEqual(booking.status, BookingStatus.CREATED)
+
+    def test_builder_takes_price_from_pricing_module(self):
+        booking = (
+            self.builder.reset()
+            .set_guest(self.guest)
+            .set_room(self.room)
+            .set_dates(self.today, self.tomorrow)
+            .set_pricing(2300.0, earned_bonus_points=69.0)
+            .build()
+        )
+        # Builder не рахує ціну сам — бере передану модулем ціноутворення
+        self.assertEqual(booking.total_price, 2300.0)
+        self.assertEqual(booking.earned_bonus_points, 69.0)
+
+    def test_negative_price_rejected(self):
+        with self.assertRaises(BookingBuildError):
+            self.builder.reset().set_pricing(-1.0)
 
     def test_booking_validation_dates_chronology(self):
         # Дата виїзду раніше або дорівнює даті заїзду
@@ -171,7 +187,6 @@ class TestBookingBuilder(unittest.TestCase):
         )
         self.assertEqual(booking.nights_count, 2)
         self.assertEqual(len(booking.services), 0)
-        self.assertEqual(booking.total_price, 2400.0)
 
     def test_booking_director_vip_package(self):
         meal = AdditionalService(name="All Inclusive", service_type=ServiceType.MEAL, price=600.0)
@@ -182,8 +197,8 @@ class TestBookingBuilder(unittest.TestCase):
             self.builder, self.guest, self.room, self.today, self.tomorrow, spa, transfer, meal
         )
         self.assertEqual(len(booking.services), 3)
-        # 2400 (номер) + 600 + 500 + 800 = 4300 грн
-        self.assertEqual(booking.total_price, 4300.0)
+        self.assertEqual({s.service_type for s in booking.services},
+                         {ServiceType.MEAL, ServiceType.TRANSFER, ServiceType.SPA})
 
 
 class TestServiceDecorator(unittest.TestCase):

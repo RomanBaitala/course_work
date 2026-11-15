@@ -5,6 +5,10 @@
 Інкапсулює покроковий процес створення складного об'єкта Booking (бронювання),
 забезпечуючи централізовану валідацію дат, доступності номерів, прив'язки гостя та списку додаткових послуг.
 Також включає BookingDirector для побудови типових комплексних пакетів проживання.
+
+Builder відповідає лише за збирання та валідацію об'єкта. Вартість він не рахує:
+її визначає модуль ціноутворення (Decorator + Strategy) і передає через set_pricing(),
+тож формула ціни існує в одному місці (SRP).
 """
 
 from datetime import date, datetime
@@ -39,6 +43,8 @@ class BookingBuilder:
         self._services: List[AdditionalService] = []
         self._status: BookingStatus = BookingStatus.CREATED
         self._used_bonus_points: float = 0.0
+        self._total_price: float = 0.0
+        self._earned_bonus_points: float = 0.0
         return self
 
     def set_id(self, booking_id: str) -> "BookingBuilder":
@@ -102,6 +108,14 @@ class BookingBuilder:
         self._used_bonus_points = round(points, 2)
         return self
 
+    def set_pricing(self, total_price: float, earned_bonus_points: float = 0.0) -> "BookingBuilder":
+        """Фіксує підсумкову вартість і бонуси до нарахування, розраховані модулем ціноутворення."""
+        if total_price < 0 or earned_bonus_points < 0:
+            raise BookingBuildError("Вартість і бонуси не можуть бути від'ємними.")
+        self._total_price = round(total_price, 2)
+        self._earned_bonus_points = round(earned_bonus_points, 2)
+        return self
+
     def _validate(self) -> None:
         """Перевіряє повноту та цілісність усіх параметрів перед створенням об'єкта."""
         if self._guest is None:
@@ -113,15 +127,9 @@ class BookingBuilder:
 
     def build(self) -> Booking:
         """
-        Завершальний етап побудови: валідує дані, розраховує початкову вартість
-        і повертає сконструйований об'єкт Booking.
+        Завершальний етап побудови: валідує дані та повертає сконструйований об'єкт Booking.
         """
         self._validate()
-
-        nights = (self._check_out_date - self._check_in_date).days
-        room_cost = self._room.base_price_per_night * nights
-        services_cost = sum(service.price for service in self._services)
-        initial_total = max(0.0, room_cost + services_cost - self._used_bonus_points)
 
         booking = Booking(
             id=self._id or str(uuid.uuid4()),
@@ -131,8 +139,9 @@ class BookingBuilder:
             check_out_date=self._check_out_date,
             services=list(self._services),
             status=self._status,
-            total_price=round(initial_total, 2),
+            total_price=self._total_price,
             used_bonus_points=self._used_bonus_points,
+            earned_bonus_points=self._earned_bonus_points,
             created_at=datetime.now(),
         )
 

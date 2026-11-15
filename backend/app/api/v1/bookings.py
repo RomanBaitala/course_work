@@ -142,10 +142,9 @@ def create_booking(req: CreateBookingRequest):
             .set_dates(req.check_in_date, req.check_out_date)
             .add_services(selected_services)
             .apply_bonus_points(used_bonuses)
+            .set_pricing(final_total, earned_bonuses)
             .build()
         )
-        booking.total_price = final_total
-        booking.earned_bonus_points = earned_bonuses
     except BookingBuildError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
