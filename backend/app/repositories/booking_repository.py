@@ -165,6 +165,15 @@ class BookingRepository:
             )
             return cursor.rowcount > 0
 
+    def count_completed_by_guest(self, guest_id: str) -> int:
+        """Кількість завершених проживань гостя (для програми лояльності)."""
+        with self.manager.connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS c FROM bookings WHERE guest_id = ? AND status = 'checked_out';",
+                (guest_id,),
+            ).fetchone()
+            return int(row["c"])
+
     # --- Аналітика для адміністратора ---
 
     def get_financial_summary(self) -> Dict[str, Any]:
