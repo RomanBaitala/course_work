@@ -2,16 +2,26 @@
 Декоратори додаткових послуг готелю.
 
 [GoF Pattern: Decorator / Структурний патерн]
-Дозволяє динамічно додавати нові платні опції (сніданок, SPA, трансфер)
+Дозволяє динамічно додавати платні опції (сніданок, SPA, трансфер тощо)
 до базової вартості проживання в номері без зміни самого класу Room чи Booking,
 формуючи деталізований опис вартості та чека.
+
+Декоратори будуються з послуг, що зберігаються в БД (AdditionalService), тому
+ціни задає адміністратор, а не код. Спосіб тарифікації залежить від типу послуги:
+  • харчування (MEAL) — за кожну ніч проживання;
+  • решта послуг (трансфер, SPA, прибирання, екскурсії) — разово.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Iterable, List, Tuple
 
 from app.domain.models.entities import AdditionalService, Room
 from app.domain.models.enums import ServiceType
+
+# Типи послуг, що тарифікуються за кожну ніч проживання
+PER_NIGHT_SERVICE_TYPES = {ServiceType.MEAL}
+
+ReceiptLine = Tuple[str, float]
 
 
 class PricedItem(ABC):
@@ -20,15 +30,22 @@ class PricedItem(ABC):
     Визначає інтерфейс для розрахунку вартості та отримання опису елементів замовлення.
     """
 
+    @property
+    @abstractmethod
+    def nights(self) -> int:
+        """Кількість ночей проживання (потрібна декораторам з тарифікацією за ніч)."""
+
     @abstractmethod
     def calculate_cost(self) -> float:
         """Повертає загальну вартість елемента замовлення."""
-        pass
 
     @abstractmethod
+    def get_receipt_lines(self) -> List[ReceiptLine]:
+        """Повертає рядки чека: (назва позиції, вартість)."""
+
     def get_description(self) -> str:
         """Повертає текстовий опис складових замовлення."""
-        pass
+        return " + ".join(f"{name}: {cost} грн" for name, cost in self.get_receipt_lines())
 
 
 class BaseRoomStay(PricedItem):
@@ -41,114 +58,83 @@ class BaseRoomStay(PricedItem):
         if nights <= 0:
             raise ValueError("Кількість діб має бути більшою за 0.")
         self.room = room
-        self.nights = nights
+        self._nights = nights
+
+    @property
+    def nights(self) -> int:
+        return self._nights
 
     def calculate_cost(self) -> float:
         """Вартість номера за вказану кількість діб."""
-        return round(self.room.base_price_per_night * self.nights, 2)
+        return round(self.room.base_price_per_night * self._nights, 2)
 
-    def get_description(self) -> str:
-        return (
-            f"Проживання в номері {self.room.room_number} "
-            f"({self.room.room_type.value}) на {self.nights} діб: {self.calculate_cost()} грн"
-        )
+    def get_receipt_lines(self) -> List[ReceiptLine]:
+        return [(
+            f"Проживання в номері {self.room.room_number} ({self.room.room_type.value}), "
+            f"{self._nights} ноч. × {self.room.base_price_per_night}",
+            self.calculate_cost(),
+        )]
 
 
 class ServiceDecorator(PricedItem, ABC):
     """
     Базовий декоратор (Base Decorator).
-    Містить посилання на об'єкт PricedItem і делегує йому базові виклики.
+    Обгортає PricedItem і додає до нього вартість однієї послуги.
     """
 
-    def __init__(self, wrappee: PricedItem):
+    def __init__(self, wrappee: PricedItem, service: AdditionalService):
         self._wrappee = wrappee
+        self.service = service
 
     @property
     def wrappee(self) -> PricedItem:
         return self._wrappee
 
-    def calculate_cost(self) -> float:
-        return self._wrappee.calculate_cost()
+    @property
+    def nights(self) -> int:
+        return self._wrappee.nights
 
-    def get_description(self) -> str:
-        return self._wrappee.get_description()
-
-
-class BreakfastDecorator(ServiceDecorator):
-    """
-    Конкретний декоратор: додає вартість сніданків.
-    Розраховується як щоденне харчування на весь термін перебування.
-    """
-
-    def __init__(self, wrappee: PricedItem, price_per_day: float = 250.0, guests_count: int = 1):
-        super().__init__(wrappee)
-        if price_per_day < 0 or guests_count <= 0:
-            raise ValueError("Ціна сніданку та кількість гостей повинні бути коректними.")
-        self.price_per_day = price_per_day
-        self.guests_count = guests_count
-
-    def _get_service_cost(self) -> float:
-        # Якщо вкладений компонент — проживання в номері, беремо його кількість ночей
-        nights = getattr(self._wrappee, "nights", 1)
-        return round(self.price_per_day * self.guests_count * nights, 2)
+    @abstractmethod
+    def service_cost(self) -> float:
+        """Вартість саме цієї послуги."""
 
     def calculate_cost(self) -> float:
-        return round(self._wrappee.calculate_cost() + self._get_service_cost(), 2)
+        return round(self._wrappee.calculate_cost() + self.service_cost(), 2)
 
-    def get_description(self) -> str:
-        cost = self._get_service_cost()
-        return f"{self._wrappee.get_description()} + Сніданок (шведський стіл, {self.guests_count} ос.): {cost} грн"
+    def get_receipt_lines(self) -> List[ReceiptLine]:
+        return self._wrappee.get_receipt_lines() + [(self._line_title(), self.service_cost())]
 
-
-class TransferDecorator(ServiceDecorator):
-    """
-    Конкретний декоратор: додає вартість трансферу (фіксована разова послуга).
-    """
-
-    def __init__(self, wrappee: PricedItem, transfer_price: float = 400.0, route: str = "Аеропорт -> Готель"):
-        super().__init__(wrappee)
-        if transfer_price < 0:
-            raise ValueError("Ціна трансферу не може бути від'ємною.")
-        self.transfer_price = transfer_price
-        self.route = route
-
-    def calculate_cost(self) -> float:
-        return round(self._wrappee.calculate_cost() + self.transfer_price, 2)
-
-    def get_description(self) -> str:
-        return f"{self._wrappee.get_description()} + Трансфер ({self.route}): {self.transfer_price} грн"
+    def _line_title(self) -> str:
+        return self.service.name
 
 
-class SpaPackageDecorator(ServiceDecorator):
-    """
-    Конкретний декоратор: додає безлімітний або разовий доступ до SPA-зони.
-    """
+class PerNightServiceDecorator(ServiceDecorator):
+    """Конкретний декоратор: послуга, що тарифікується за кожну ніч (напр. сніданок)."""
 
-    def __init__(self, wrappee: PricedItem, spa_price: float = 700.0, package_name: str = "Relax & Thermal SPA"):
-        super().__init__(wrappee)
-        if spa_price < 0:
-            raise ValueError("Ціна SPA-пакету не може бути від'ємною.")
-        self.spa_price = spa_price
-        self.package_name = package_name
+    def service_cost(self) -> float:
+        return round(self.service.price * self.nights, 2)
 
-    def calculate_cost(self) -> float:
-        return round(self._wrappee.calculate_cost() + self.spa_price, 2)
-
-    def get_description(self) -> str:
-        return f"{self._wrappee.get_description()} + SPA ({self.package_name}): {self.spa_price} грн"
+    def _line_title(self) -> str:
+        return f"{self.service.name}, {self.nights} ноч. × {self.service.price}"
 
 
-class CustomServiceDecorator(ServiceDecorator):
-    """
-    Універсальний конкретний декоратор для обгортання будь-якої сутності AdditionalService.
-    """
+class OneTimeServiceDecorator(ServiceDecorator):
+    """Конкретний декоратор: разова послуга (трансфер, SPA, прибирання, екскурсія)."""
 
-    def __init__(self, wrappee: PricedItem, service: AdditionalService):
-        super().__init__(wrappee)
-        self.service = service
+    def service_cost(self) -> float:
+        return round(self.service.price, 2)
 
-    def calculate_cost(self) -> float:
-        return round(self._wrappee.calculate_cost() + self.service.price, 2)
 
-    def get_description(self) -> str:
-        return f"{self._wrappee.get_description()} + {self.service.name}: {self.service.price} грн"
+def decorate_with_service(item: PricedItem, service: AdditionalService) -> PricedItem:
+    """Обирає відповідний декоратор за типом послуги."""
+    if service.service_type in PER_NIGHT_SERVICE_TYPES:
+        return PerNightServiceDecorator(item, service)
+    return OneTimeServiceDecorator(item, service)
+
+
+def build_priced_stay(room: Room, nights: int, services: Iterable[AdditionalService]) -> PricedItem:
+    """Будує ланцюжок: проживання, обгорнуте декораторами всіх обраних послуг."""
+    item: PricedItem = BaseRoomStay(room, nights)
+    for service in services:
+        item = decorate_with_service(item, service)
+    return item

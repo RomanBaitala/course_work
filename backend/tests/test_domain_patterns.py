@@ -52,10 +52,9 @@ from app.domain.pricing.pricing_strategy import (
 )
 from app.domain.pricing.service_decorator import (
     BaseRoomStay,
-    BreakfastDecorator,
-    CustomServiceDecorator,
-    SpaPackageDecorator,
-    TransferDecorator,
+    OneTimeServiceDecorator,
+    PerNightServiceDecorator,
+    build_priced_stay,
 )
 
 
@@ -207,48 +206,41 @@ class TestServiceDecorator(unittest.TestCase):
     def setUp(self):
         self.room = RoomFactoryProvider.create_room(RoomType.STANDARD, "305")
         self.base_stay = BaseRoomStay(self.room, nights=3)
+        self.breakfast = AdditionalService(name="Сніданок", service_type=ServiceType.MEAL, price=250.0)
+        self.transfer = AdditionalService(name="Трансфер", service_type=ServiceType.TRANSFER, price=500.0)
+        self.spa = AdditionalService(name="SPA", service_type=ServiceType.SPA, price=700.0)
 
     def test_base_room_stay_cost(self):
         # 1200 * 3 = 3600
         self.assertEqual(self.base_stay.calculate_cost(), 3600.0)
         self.assertIn("Проживання в номері 305", self.base_stay.get_description())
 
-    def test_breakfast_decorator(self):
-        # 3600 + (250 * 2 гості * 3 доби) = 3600 + 1500 = 5100
-        decorated = BreakfastDecorator(self.base_stay, price_per_day=250.0, guests_count=2)
-        self.assertEqual(decorated.calculate_cost(), 5100.0)
-        self.assertIn("Сніданок (шведський стіл, 2 ос.): 1500.0 грн", decorated.get_description())
+    def test_meal_is_charged_per_night(self):
+        # 3600 + 250 * 3 ночі = 4350
+        decorated = PerNightServiceDecorator(self.base_stay, self.breakfast)
+        self.assertEqual(decorated.calculate_cost(), 4350.0)
+        self.assertEqual(decorated.service_cost(), 750.0)
+
+    def test_one_time_service_charged_once(self):
+        decorated = OneTimeServiceDecorator(self.base_stay, self.transfer)
+        self.assertEqual(decorated.calculate_cost(), 4100.0)
 
     def test_multiple_decorators_layering(self):
-        # Базове проживання 3600
-        # + Сніданок (1 гість, 3 доби) = 750
-        # + Трансфер = 400
-        # + SPA = 700
-        # Всього = 3600 + 750 + 400 + 700 = 5450 грн
-        decorated = SpaPackageDecorator(
-            TransferDecorator(
-                BreakfastDecorator(self.base_stay, price_per_day=250.0, guests_count=1),
-                transfer_price=400.0,
-            ),
-            spa_price=700.0,
-        )
+        # 3600 + сніданок 750 + трансфер 500 + SPA 700 = 5550
+        item = build_priced_stay(self.room, 3, [self.breakfast, self.transfer, self.spa])
+        self.assertIsInstance(item, OneTimeServiceDecorator)
+        self.assertEqual(item.calculate_cost(), 5550.0)
+        self.assertEqual(item.nights, 3)
+        names = [name for name, _ in item.get_receipt_lines()]
+        self.assertEqual(len(names), 4)
+        self.assertIn("Проживання в номері 305", names[0])
+        self.assertIn("SPA", item.get_description())
 
-        self.assertEqual(decorated.calculate_cost(), 5450.0)
-        desc = decorated.get_description()
-        self.assertIn("Проживання в номері 305", desc)
-        self.assertIn("Сніданок", desc)
-        self.assertIn("Трансфер", desc)
-        self.assertIn("SPA", desc)
-
-    def test_custom_service_decorator(self):
-        excursion = AdditionalService(
-            name="Екскурсія замками Львова",
-            service_type=ServiceType.EXCURSION,
-            price=450.0,
-        )
-        decorated = CustomServiceDecorator(self.base_stay, excursion)
-        self.assertEqual(decorated.calculate_cost(), 4050.0)
-        self.assertIn("Екскурсія замками Львова: 450.0 грн", decorated.get_description())
+    def test_decorator_chosen_by_service_type(self):
+        item = build_priced_stay(self.room, 2, [self.breakfast])
+        self.assertIsInstance(item, PerNightServiceDecorator)
+        excursion = AdditionalService(name="Екскурсія", service_type=ServiceType.EXCURSION, price=450.0)
+        self.assertIsInstance(build_priced_stay(self.room, 2, [excursion]), OneTimeServiceDecorator)
 
 
 class TestPricingStrategy(unittest.TestCase):

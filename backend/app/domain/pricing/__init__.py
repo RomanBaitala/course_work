@@ -4,12 +4,12 @@ Pricing package containing Decorators and Strategies for price calculation.
 
 from .service_decorator import (
     BaseRoomStay,
-    BreakfastDecorator,
-    CustomServiceDecorator,
+    OneTimeServiceDecorator,
+    PerNightServiceDecorator,
     PricedItem,
     ServiceDecorator,
-    SpaPackageDecorator,
-    TransferDecorator,
+    build_priced_stay,
+    decorate_with_service,
 )
 from .pricing_strategy import (
     LongStayDiscountStrategy,
@@ -25,10 +25,10 @@ __all__ = [
     "PricedItem",
     "BaseRoomStay",
     "ServiceDecorator",
-    "BreakfastDecorator",
-    "TransferDecorator",
-    "SpaPackageDecorator",
-    "CustomServiceDecorator",
+    "PerNightServiceDecorator",
+    "OneTimeServiceDecorator",
+    "decorate_with_service",
+    "build_priced_stay",
     # GoF Strategy
     "PricingStrategy",
     "StandardPricingStrategy",

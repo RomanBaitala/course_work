@@ -30,8 +30,7 @@ from app.domain.pricing.pricing_strategy import (
     WeekendSurchargeStrategy,
 )
 from app.domain.pricing.service_decorator import (
-    BaseRoomStay,
-    CustomServiceDecorator,
+    build_priced_stay,
 )
 from app.repositories import (
     BookingRepository,
@@ -108,9 +107,7 @@ def create_booking(req: CreateBookingRequest):
 
     # 5. Розрахунок вартості через Decorator & Strategy
     nights = (req.check_out_date - req.check_in_date).days
-    priced_item = BaseRoomStay(room, nights=nights)
-    for s in selected_services:
-        priced_item = CustomServiceDecorator(priced_item, s)
+    priced_item = build_priced_stay(room, nights, selected_services)
 
     subtotal = priced_item.calculate_cost()
 
