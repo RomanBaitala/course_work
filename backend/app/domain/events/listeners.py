@@ -147,15 +147,3 @@ class RoomStatusListener(BookingEventListener):
         elif event.event_type == BookingEventType.CHECKED_OUT:
             self.room_repo.update_status(room_id, RoomStatus.AVAILABLE)
             event.booking.room.status = RoomStatus.AVAILABLE
-
-
-class AuditLogListener(BookingEventListener):
-    """Журнал аудиту: фіксує всі події (підписується на всі типи одразу)."""
-
-    def __init__(self) -> None:
-        self.records: List[str] = []
-
-    def update(self, event: BookingEvent) -> None:
-        self.records.append(
-            f"{event.occurred_at:%Y-%m-%d %H:%M:%S} {event.event_type.value} booking={event.booking.id}"
-        )

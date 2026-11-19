@@ -13,7 +13,6 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from app.domain.events import (
-    AuditLogListener,
     BookingEvent,
     BookingEventListener,
     BookingEventManager,
@@ -83,12 +82,12 @@ class TestEventManager(unittest.TestCase):
         self.assertEqual(spy.received, [BookingEventType.CANCELLED])
 
     def test_wildcard_subscription_and_unsubscribe(self):
-        mgr, audit = BookingEventManager(), AuditLogListener()
-        mgr.subscribe(audit)  # на всі події
+        mgr, spy = BookingEventManager(), SpyListener()
+        mgr.subscribe(spy)  # на всі події
         mgr.notify(BookingEvent(BookingEventType.CREATED, make_booking()))
-        mgr.unsubscribe(audit)
+        mgr.unsubscribe(spy)
         mgr.notify(BookingEvent(BookingEventType.CONFIRMED, make_booking()))
-        self.assertEqual(len(audit.records), 1)
+        self.assertEqual(spy.received, [BookingEventType.CREATED])
 
     def test_duplicate_subscription_ignored(self):
         mgr, spy = BookingEventManager(), SpyListener()

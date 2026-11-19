@@ -7,7 +7,6 @@ from .event_manager import (
     BookingEventType,
 )
 from .listeners import (
-    AuditLogListener,
     LoyaltyBonusListener,
     Notification,
     NotificationListener,
@@ -22,6 +21,5 @@ __all__ = [
     "NotificationListener",
     "LoyaltyBonusListener",
     "RoomStatusListener",
-    "AuditLogListener",
     "Notification",
 ]

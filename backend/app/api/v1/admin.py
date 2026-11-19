@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.api.v1.bookings import _booking_to_response
+from app.api.v1.bookings import _booking_to_response, http_error
 from app.api.v1.schemas import (
     BookingResponse,
     FinancialReportResponse,
@@ -20,6 +20,7 @@ from app.api.v1.schemas import (
 )
 from app.domain.models.enums import BookingStatus, RoomStatus
 from app.repositories import BookingRepository, RoomRepository
+from app.services.booking_service import BookingError, get_booking_service
 
 router = APIRouter(prefix="/admin", tags=["Admin & Analytics"])
 booking_repo = BookingRepository()
@@ -65,8 +66,21 @@ def get_all_hotel_bookings(
     return [_booking_to_response(b) for b in bookings]
 
 
+# Цільовий статус → дія State-машини (повернути бронювання в «created» неможливо)
+STATUS_TO_ACTION = {
+    BookingStatus.CONFIRMED: "confirm",
+    BookingStatus.CHECKED_IN: "check_in",
+    BookingStatus.CHECKED_OUT: "check_out",
+    BookingStatus.CANCELLED: "cancel",
+}
+
+
 @router.patch("/bookings/{booking_id}/status", summary="Змінити статус бронювання")
 def update_booking_status(booking_id: str, req: UpdateBookingStatusRequest):
+    """
+    Змінює статус через State-машину: недопустимі переходи (напр. заселити скасоване
+    бронювання) повертають 409. Статус номера та бонуси оновлюють слухачі подій.
+    """
     try:
         new_status = BookingStatus(req.status)
     except ValueError:
@@ -74,21 +88,17 @@ def update_booking_status(booking_id: str, req: UpdateBookingStatusRequest):
             status_code=400,
             detail=f"Некоректний статус. Дозволені: {[s.value for s in BookingStatus]}",
         )
+    action = STATUS_TO_ACTION.get(new_status)
+    if not action:
+        raise HTTPException(status_code=400, detail="Повернути бронювання у статус 'created' неможливо.")
 
-    booking = booking_repo.get_by_id(booking_id)
-    if not booking:
-        raise HTTPException(status_code=404, detail=f"Бронювання '{booking_id}' не знайдено.")
-
-    booking_repo.update_status(booking_id, new_status)
-
-    # Якщо клієнт заселився, оновлюємо статус кімнати на OCCUPIED, якщо виселився - на AVAILABLE
-    if new_status == BookingStatus.CHECKED_IN:
-        room_repo.update_status(booking.room.id, RoomStatus.OCCUPIED)
-    elif new_status in (BookingStatus.CHECKED_OUT, BookingStatus.CANCELLED):
-        room_repo.update_status(booking.room.id, RoomStatus.AVAILABLE)
+    try:
+        booking = get_booking_service().change_status(booking_id, action)
+    except BookingError as e:
+        raise http_error(e)
 
     return {
-        "message": f"Статус бронювання '{booking_id}' оновлено на '{new_status.value}'.",
+        "message": f"Статус бронювання '{booking_id}' оновлено на '{booking.status.value}'.",
         "booking_id": booking_id,
-        "status": new_status.value,
+        "status": booking.status.value,
     }
