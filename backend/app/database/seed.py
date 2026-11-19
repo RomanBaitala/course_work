@@ -11,7 +11,7 @@ import sys
 # Додаємо корінь backend у sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from app.database.connection import db_manager
+from app.database.connection import DatabaseManager, db_manager
 from app.domain.factories.room_factory import RoomFactoryProvider
 from app.domain.models.entities import AdditionalService, Booking, User
 from app.domain.models.enums import (
@@ -31,15 +31,20 @@ from app.repositories import (
 )
 
 
-def seed_database():
-    """Наповнює базу даних демонстраційними записами."""
+def seed_database(manager: DatabaseManager = db_manager):
+    """
+    Наповнює базу даних демонстраційними записами.
+    Скрипт можна запускати повторно: перед наповненням усі дані видаляються,
+    а дати бронювань рахуються від поточного дня.
+    """
     print("Ініціалізація схеми бази даних...")
-    db_manager.init_db()
+    manager.init_db()
+    manager.clear_all()
 
-    room_repo = RoomRepository(db_manager)
-    user_repo = UserRepository(db_manager)
-    service_repo = ServiceRepository(db_manager)
-    booking_repo = BookingRepository(db_manager, user_repo, room_repo, service_repo)
+    room_repo = RoomRepository(manager)
+    user_repo = UserRepository(manager)
+    service_repo = ServiceRepository(manager)
+    booking_repo = BookingRepository(manager, user_repo, room_repo, service_repo)
 
     # 1. Створюємо користувачів
     print("Створення користувачів...")

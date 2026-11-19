@@ -8,8 +8,10 @@ import os
 import sqlite3
 from typing import Generator
 
-DEFAULT_DB_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "hotel.db")
+# Шлях можна перевизначити змінною середовища HOTEL_DB_PATH (напр. для окремої тестової БД)
+DEFAULT_DB_PATH = os.getenv(
+    "HOTEL_DB_PATH",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "hotel.db")),
 )
 
 
@@ -106,6 +108,12 @@ class DatabaseManager:
         """
         with self.connection() as conn:
             conn.executescript(schema_sql)
+
+    def clear_all(self) -> None:
+        """Видаляє всі дані з таблиць (схема лишається). Порядок враховує зовнішні ключі."""
+        with self.connection() as conn:
+            for table in ("booking_services", "bookings", "services", "rooms", "users"):
+                conn.execute(f"DELETE FROM {table};")
 
 
 # Глобальний екземпляр менеджера бази даних

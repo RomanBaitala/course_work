@@ -2,11 +2,17 @@
 Тести для REST API системи управління готелем.
 Перевіряють роботу обробників запитів, фільтрацію номерів, створення бронювань,
 валідацію зайнятості дат та формування адмін-звітів.
+
+Тести працюють з окремою тимчасовою БД, яку перед кожним тестом заново наповнює seed.py,
+тому не змінюють робочу hotel.db і не залежать від дня, коли її наповнювали.
 """
 
+from contextlib import redirect_stdout
 from datetime import date, timedelta
+import io
 import os
 import sys
+import tempfile
 import unittest
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -29,6 +35,8 @@ from app.api.v1.rooms import get_room_by_id, get_rooms
 from app.api.v1.schemas import CreateBookingRequest, UpdateBookingStatusRequest
 from app.api.v1.services import get_services
 from app.api.v1.users import get_users
+from app.database.connection import db_manager
+from app.database.seed import seed_database
 from app.domain.models.enums import BookingStatus, RoomType
 from app.repositories import RoomRepository, UserRepository
 
@@ -36,7 +44,23 @@ from app.repositories import RoomRepository, UserRepository
 class TestHotelAPI(unittest.TestCase):
     """Інтеграційні тести функціоналу REST API."""
 
+    @classmethod
+    def setUpClass(cls):
+        # Перенаправляємо глобальний менеджер БД (його використовують усі репозиторії API)
+        # на тимчасовий файл і повертаємо назад після тестів.
+        fd, cls.test_db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        cls.original_db_path = db_manager.db_path
+        db_manager.db_path = cls.test_db_path
+
+    @classmethod
+    def tearDownClass(cls):
+        db_manager.db_path = cls.original_db_path
+        os.remove(cls.test_db_path)
+
     def setUp(self):
+        with redirect_stdout(io.StringIO()):
+            seed_database(db_manager)
         self.room_repo = RoomRepository()
         self.user_repo = UserRepository()
         self.users = get_users()
