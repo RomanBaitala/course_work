@@ -22,13 +22,7 @@ from app.api.v1.schemas import (
 from app.api.v1.users import _user_to_response
 from app.domain.builders.booking_builder import BookingBuildError, BookingBuilder
 from app.domain.models.enums import BookingStatus
-from app.domain.pricing.pricing_strategy import (
-    LongStayDiscountStrategy,
-    LoyaltyPricingStrategy,
-    PricingCalculatorContext,
-    StandardPricingStrategy,
-    WeekendSurchargeStrategy,
-)
+from app.domain.pricing.pricing_strategy import PricingCalculatorContext, select_pricing_strategy
 from app.domain.pricing.service_decorator import (
     build_priced_stay,
 )
@@ -111,14 +105,8 @@ def create_booking(req: CreateBookingRequest):
 
     subtotal = priced_item.calculate_cost()
 
-    # Вибір стратегії ціноутворення
-    strategies = {
-        "standard": StandardPricingStrategy(),
-        "long_stay": LongStayDiscountStrategy(),
-        "loyalty": LoyaltyPricingStrategy(),
-        "weekend": WeekendSurchargeStrategy(),
-    }
-    strategy = strategies.get(req.pricing_strategy, StandardPricingStrategy())
+    # Тариф визначає сервер за датами та рівнем лояльності гостя
+    strategy = select_pricing_strategy(subtotal, req.check_in_date, req.check_out_date, guest)
     context = PricingCalculatorContext(strategy)
     calculated_price = context.calculate(subtotal, nights=nights, guest=guest)
 

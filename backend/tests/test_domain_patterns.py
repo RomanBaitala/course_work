@@ -49,6 +49,8 @@ from app.domain.pricing.pricing_strategy import (
     PricingCalculatorContext,
     StandardPricingStrategy,
     WeekendSurchargeStrategy,
+    is_weekend_stay,
+    select_pricing_strategy,
 )
 from app.domain.pricing.service_decorator import (
     BaseRoomStay,
@@ -284,6 +286,41 @@ class TestPricingStrategy(unittest.TestCase):
         self.context.strategy = WeekendSurchargeStrategy(surcharge_rate=0.20)
         # +20%
         self.assertEqual(self.context.calculate(self.base_amount, 2, self.client_standard), 12000.0)
+
+
+class TestPricingStrategySelection(unittest.TestCase):
+    """Сервер сам обирає тариф за датами проживання та рівнем лояльності гостя."""
+
+    # 2026-11-20 — п'ятниця
+    FRIDAY = date(2026, 11, 20)
+    MONDAY = date(2026, 11, 23)
+
+    def setUp(self):
+        self.standard = User(full_name="Олег", loyalty_tier=LoyaltyTier.STANDARD)
+        self.gold = User(full_name="Андрій", loyalty_tier=LoyaltyTier.GOLD)
+
+    def select(self, check_in, nights, guest):
+        return select_pricing_strategy(10000.0, check_in, check_in + timedelta(days=nights), guest)
+
+    def test_weekend_detection(self):
+        self.assertTrue(is_weekend_stay(self.FRIDAY, self.FRIDAY + timedelta(days=2)))   # пт–нд
+        self.assertFalse(is_weekend_stay(self.FRIDAY, self.FRIDAY + timedelta(days=3)))  # пт–пн (3 ночі)
+        self.assertFalse(is_weekend_stay(self.MONDAY, self.MONDAY + timedelta(days=1)))
+
+    def test_short_weekend_stay_gets_surcharge_even_for_loyal_guest(self):
+        self.assertIsInstance(self.select(self.FRIDAY, 2, self.gold), WeekendSurchargeStrategy)
+
+    def test_weekday_short_stay_without_discounts_is_standard(self):
+        self.assertIsInstance(self.select(self.MONDAY, 2, self.standard), StandardPricingStrategy)
+
+    def test_loyal_guest_gets_loyalty_discount(self):
+        self.assertIsInstance(self.select(self.MONDAY, 2, self.gold), LoyaltyPricingStrategy)
+
+    def test_best_discount_wins_for_long_stay(self):
+        # 7 ночей: тривале перебування −15% вигідніше за Gold −10%
+        self.assertIsInstance(self.select(self.MONDAY, 7, self.gold), LongStayDiscountStrategy)
+        # 4 ночі: −10% за тривалість = Gold −10%, береться перша (тривале перебування)
+        self.assertIsInstance(self.select(self.MONDAY, 4, self.standard), LongStayDiscountStrategy)
 
 
 if __name__ == "__main__":

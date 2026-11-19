@@ -18,6 +18,8 @@ from .pricing_strategy import (
     PricingStrategy,
     StandardPricingStrategy,
     WeekendSurchargeStrategy,
+    is_weekend_stay,
+    select_pricing_strategy,
 )
 
 __all__ = [
@@ -36,4 +38,6 @@ __all__ = [
     "LoyaltyPricingStrategy",
     "WeekendSurchargeStrategy",
     "PricingCalculatorContext",
+    "select_pricing_strategy",
+    "is_weekend_stay",
 ]

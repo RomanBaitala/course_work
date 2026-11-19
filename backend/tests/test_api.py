@@ -113,7 +113,6 @@ class TestHotelAPI(unittest.TestCase):
             check_out_date=future_out,
             service_ids=[services[0].id],
             use_bonus_points=0.0,
-            pricing_strategy="standard",
         )
 
         res = create_booking(req)

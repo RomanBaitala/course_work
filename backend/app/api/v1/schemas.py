@@ -60,7 +60,6 @@ class CreateBookingRequest(BaseModel):
     check_out_date: date = Field(..., description="Дата виїзду (YYYY-MM-DD)")
     service_ids: List[str] = Field(default_factory=list, description="Список ID додаткових послуг")
     use_bonus_points: float = Field(0.0, ge=0.0, description="Кількість бонусних балів для списання")
-    pricing_strategy: str = Field("standard", description="Стратегія розрахунку (standard, long_stay, loyalty, weekend)")
 
 
 class BookingResponse(BaseModel):
